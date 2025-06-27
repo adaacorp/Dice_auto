@@ -3,3 +3,13 @@ To run the code:
 Headless Mode :  npx playwright test tests/applyJobs.spec.js 
 
 Headed Mode :  npx playwright test tests/applyJobs.spec.js --headed 
+
+
+GROQ Models:
+gemma2-9b-it
+llama3-8b-8192
+llama3-70b-8192	
+
+
+For Normal Application : https://www.dice.com/jobs?&q=${encodedSearch}
+For EasyApply and Today : https://www.dice.com/jobs?filters.easyApply=true&filters.postedDate=ONE&q=${encodedSearch}

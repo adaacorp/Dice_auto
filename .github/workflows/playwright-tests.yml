@@ -9,10 +9,7 @@ on:
   pull_request:
     branches: [main, master]
   schedule:
-    - cron: "0 10 * * 1-5" # 6:00 AM ET Monday-Friday
-    - cron: "0 17 * * 1-5" # 1:00 PM ET Monday-Friday
-    - cron: "0 2 * * 2-6" # 10:00 PM ET (previous day) Monday-Friday
-    - cron: "0 4 * * 0" # 12:00 AM ET Sunday
+    - cron: "0 13 * * 1-5" # 9:00 AM ET Monday-Friday
 
 jobs:
   test:
@@ -28,17 +25,16 @@ jobs:
       - name: Install dependencies
         run: |
           npm ci
-          # Install UI dependencies
-          npm install react react-dom @emotion/react framer-motion recharts @headlessui/react @heroicons/react tailwindcss postcss autoprefixer
           # Install test dependencies
           npm install -D @playwright/test
           npm install exceljs
+          npm install dotenv pdf-parse groq-sdk
 
       - name: Install only Chromium browser
         run: npx playwright install chromium --with-deps
 
-      - name: Run Playwright test for applyJobs.spec.js
-        run: npx playwright test tests/applyJobs.spec.js
+      - name: Run Playwright test for dice_easy.spec.js
+        run: npx playwright test tests/dice_easy.spec.js
         env:
           CI: true
 
@@ -58,7 +54,6 @@ jobs:
           name: application-logs
           path: |
             Logs/
-            Reports/
 
       - name: Get Date and Time
         id: get_date

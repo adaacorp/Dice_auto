@@ -1,0 +1,13 @@
+{
+  "batchIdx": 0,
+  "searchTerm": "Playwright",
+  "pageNum": 2,
+  "jobCardIdx": 0,
+  "stats": {
+    "applied": 0,
+    "failed": 0,
+    "skipped": 0,
+    "alreadyApplied": 0,
+    "total": 0
+  }
+}

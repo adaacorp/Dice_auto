@@ -23,5 +23,5 @@ git commit -m "Playwright_DICE_Automation"
 git push origin main
 
 git add .
-git commit -m "Final_Playwright_DICE_Automation"
+git commit -m "Dice_Automation_easy"
 git push origin main

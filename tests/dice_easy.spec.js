@@ -18,12 +18,9 @@ const SEARCH_ITEMS = [
   // General QA / Testing Roles
   "QA",
   "Quality",
-  "Software Tester",
-  "Manual Tester",
 
   // Automation-Focused Roles
   "Automation",
-  "Test Automation",
 
   // SDET-Focused Titles
   "SDET",

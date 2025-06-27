@@ -25,3 +25,15 @@ git push origin main
 git add .
 git commit -m "Dice_Automation_easy"
 git push origin main
+
+
+echo "# Dice_auto" >> README.md
+git init
+git add README.md
+git commit -m "first commit"
+git branch -M main
+git remote add origin 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@https://github.com/adaacorp/Dice_auto.git
+git push -u origin main
+
+
+token : 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

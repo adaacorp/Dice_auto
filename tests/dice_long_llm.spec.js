@@ -57,7 +57,7 @@ test.setTimeout(0); // 0 means no timeout
 const CV_PATH = path.join(__dirname, "../CV/your_cv.pdf");
 const GROQ_MODEL = "gemma2-9b-it"; // Or your preferred Groq model
 const KEYWORD_EXTRACTION_PROMPT = `
-Extract a list of highly relevant technical skills and job role keywords from the following CV text. Focus on action verbs, technologies, methodologies, and common industry terms. List each skill on a new line. If no relevant skills are found, respond with "No relevant skills found".
+Extract a list of 8 or fewer highly relevant technical skills and job role keywords from the following CV text, with relevance to QA / Automation / SDET / Playwright roles. Focus on action verbs, technologies, methodologies, and common industry terms. List each skill on a new line. If no relevant skills are found, respond with "No relevant skills found".
 
 CV Text:
 \`\`\`
@@ -68,7 +68,7 @@ Keywords:
 `;
 
 const JOB_DESCRIPTION_MATCH_PROMPT = `
-Analyze the following job description and the provided keywords extracted from a CV. Determine if there's a strong match between the job requirements and the CV's skills. Respond with "MATCH" if there's a good overlap, "PARTIAL_MATCH" if there's some overlap but not strong, or "NO_MATCH" if there's little to no overlap. Provide a brief explanation for your decision.
+Analyze the following job description and the provided keywords extracted from a CV. Determine if there's a strong match between the job requirements and the CV's skills, with relevance to QA / Automation / SDET / Playwright roles. Respond with "MATCH" if there's a good overlap, "PARTIAL_MATCH" if there's some overlap but not strong, or "NO_MATCH" if there's little to no overlap. Provide only 5 words explanation for your decision.
 
 CV Keywords:
 \`\`\`

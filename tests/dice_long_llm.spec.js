@@ -52,10 +52,35 @@ const BATCH_SIZE = 5;
 // Remove batch timeout limit to let batches run to completion
 test.setTimeout(0); // 0 means no timeout
 
-// --- LLM Configuration ---
-// !!! IMPORTANT !!! Update this path to your CV PDF file
+// CV PDF file
 const CV_PATH = path.join(__dirname, "../CV/your_cv.pdf");
-const GROQ_MODEL = "gemma2-9b-it"; // Or your preferred Groq model
+
+// --- Groq Model Fallback Logic ---
+const GROQ_MODELS = ["gemma2-9b-it", "llama3-8b-8192", "llama3-70b-8192"];
+
+async function callGroqWithFallback({ messages, modelList }) {
+  for (const model of modelList) {
+    try {
+      const chatCompletion = await groqClient.chat.completions.create({
+        messages,
+        model,
+      });
+      return chatCompletion;
+    } catch (error) {
+      if (
+        error.status === 429 &&
+        error.message &&
+        error.message.includes("rate limit")
+      ) {
+        console.warn(`⚠️ Rate limit for model ${model}, trying next...`);
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw new Error("All Groq models are rate-limited or failed.");
+}
+
 const KEYWORD_EXTRACTION_PROMPT = `
 Extract a list of 8 or fewer highly relevant technical skills and job role keywords from the following CV text, with relevance to QA / Automation / SDET / Playwright roles. Focus on action verbs, technologies, methodologies, and common industry terms. List each skill on a new line. If no relevant skills are found, respond with "No relevant skills found".
 
@@ -119,14 +144,14 @@ async function getCVKeywords(cvText) {
   }
   try {
     console.log("🧠 Sending CV to Groq for keyword extraction...");
-    const chatCompletion = await groqClient.chat.completions.create({
+    const chatCompletion = await callGroqWithFallback({
       messages: [
         {
           role: "user",
           content: KEYWORD_EXTRACTION_PROMPT.replace("{cvText}", cvText),
         },
       ],
-      model: GROQ_MODEL,
+      modelList: GROQ_MODELS,
     });
 
     const responseContent = chatCompletion.choices[0]?.message?.content;
@@ -251,9 +276,9 @@ async function checkJobMatchWithLLM(cvKeywords, jobDescription) {
         cvKeywords.join(", ")
       ).replace("{jobDescription}", jobDescription) +
       "\n\nRespond with only one sentence.";
-    const chatCompletion = await groqClient.chat.completions.create({
+    const chatCompletion = await callGroqWithFallback({
       messages: [{ role: "user", content: prompt }],
-      model: GROQ_MODEL,
+      modelList: GROQ_MODELS,
     });
     const responseContent = chatCompletion.choices[0]?.message?.content;
     if (responseContent && responseContent.toLowerCase().includes("match")) {

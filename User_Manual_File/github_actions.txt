@@ -30,7 +30,7 @@ git push origin main
 echo "# Dice_auto" >> README.md
 git init
 git add .
-git commit -m "first commit"
+git commit -m "Dice Playwright Automation with Groq LLM"
 git branch -M main
 git remote set-url origin https://github.com/adaacorp/Dice_auto.git
 git push -u origin main

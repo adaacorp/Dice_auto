@@ -55,15 +55,40 @@ test.setTimeout(0); // 0 means no timeout
 // CV PDF file
 const CV_PATH = path.join(__dirname, "../CV/your_cv.pdf");
 
-// --- Groq Model Fallback Logic ---
-const GROQ_MODELS = ["gemma2-9b-it", "llama3-8b-8192", "llama3-70b-8192"];
+// --- Groq API Key Rotation Logic ---
+// Load all GROQ_API_KEY_* from process.env
+const groqApiKeys = Object.keys(process.env)
+  .filter((k) => k.startsWith("GROQ_API_KEY_"))
+  .sort()
+  .map((k) => process.env[k])
+  .filter(Boolean);
 
-async function callGroqWithFallback({ messages, modelList }) {
-  for (const model of modelList) {
+let groqClient;
+let groqApiKeyIndex = 0;
+
+function setGroqClientByIndex(idx) {
+  groqClient = new Groq({ apiKey: groqApiKeys[idx] });
+}
+
+if (!groqApiKeys.length) {
+  console.error(
+    "❌ No GROQ_API_KEY_* found in .env. LLM features will be disabled."
+  );
+} else {
+  setGroqClientByIndex(groqApiKeyIndex);
+}
+
+// --- Groq API Key Rotation Only (No Model Fallback) ---
+const GROQ_MODEL = "gemma2-9b-it"; // Use a single model
+
+async function callGroqWithFallback({ messages }) {
+  let lastError;
+  for (let keyTries = 0; keyTries < groqApiKeys.length; keyTries++) {
+    setGroqClientByIndex(groqApiKeyIndex);
     try {
       const chatCompletion = await groqClient.chat.completions.create({
         messages,
-        model,
+        model: GROQ_MODEL,
       });
       return chatCompletion;
     } catch (error) {
@@ -72,15 +97,20 @@ async function callGroqWithFallback({ messages, modelList }) {
         error.message &&
         error.message.includes("rate limit")
       ) {
-        console.warn(`⚠️ Rate limit for model ${model}, trying next...`);
+        console.warn(
+          `⚠️ Rate limit for API key index ${groqApiKeyIndex}, trying next key...`
+        );
+        lastError = error;
+        groqApiKeyIndex = (groqApiKeyIndex + 1) % groqApiKeys.length;
         continue;
       }
       throw error;
     }
   }
-  throw new Error("All Groq models are rate-limited or failed.");
+  throw lastError || new Error("All Groq API keys are rate-limited or failed.");
 }
 
+// --- Prompts ---
 const KEYWORD_EXTRACTION_PROMPT = `
 Extract a list of 8 or fewer highly relevant technical skills and job role keywords from the following CV text, with relevance to QA / Automation / SDET / Playwright roles. Focus on action verbs, technologies, methodologies, and common industry terms. List each skill on a new line. If no relevant skills are found, respond with "No relevant skills found".
 
@@ -107,16 +137,6 @@ Job Description:
 
 Match:
 `;
-
-// --- Groq Client Initialization ---
-let groqClient;
-if (!GROQ_API_KEY) {
-  console.error(
-    "❌ GROQ_API_KEY not found in .env. LLM features will be disabled."
-  );
-} else {
-  groqClient = new Groq({ apiKey: GROQ_API_KEY });
-}
 
 // --- Helper function to read PDF ---
 async function readPdf(filePath) {

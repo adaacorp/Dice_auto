@@ -67,14 +67,58 @@ Job Description:
 Match:
 `;
 
-// --- Groq Client Initialization ---
+// --- Groq API Key Rotation Logic ---
+// Load all GROQ_API_KEY_* from process.env
+const groqApiKeys = Object.keys(process.env)
+  .filter((k) => k.startsWith("GROQ_API_KEY_"))
+  .sort()
+  .map((k) => process.env[k])
+  .filter(Boolean);
 let groqClient;
-if (!GROQ_API_KEY) {
+let groqApiKeyIndex = 0;
+
+function setGroqClientByIndex(idx) {
+  groqClient = new Groq({ apiKey: groqApiKeys[idx] });
+}
+
+if (!groqApiKeys.length) {
   console.error(
-    "❌ GROQ_API_KEY not found in .env. LLM features will be disabled."
+    "❌ No GROQ_API_KEY_* found in .env. LLM features will be disabled."
   );
 } else {
-  groqClient = new Groq({ apiKey: GROQ_API_KEY });
+  setGroqClientByIndex(groqApiKeyIndex);
+}
+
+// --- Groq API Key Rotation Only (No Model Fallback) ---
+const GROQ_MODEL = "gemma2-9b-it"; // Use a single model
+
+async function callGroqWithFallback({ messages }) {
+  let lastError;
+  for (let keyTries = 0; keyTries < groqApiKeys.length; keyTries++) {
+    setGroqClientByIndex(groqApiKeyIndex);
+    try {
+      const chatCompletion = await groqClient.chat.completions.create({
+        messages,
+        model: GROQ_MODEL,
+      });
+      return chatCompletion;
+    } catch (error) {
+      if (
+        error.status === 429 &&
+        error.message &&
+        error.message.includes("rate limit")
+      ) {
+        console.warn(
+          `⚠️ Rate limit for API key index ${groqApiKeyIndex}, trying next key...`
+        );
+        lastError = error;
+        groqApiKeyIndex = (groqApiKeyIndex + 1) % groqApiKeys.length;
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw lastError || new Error("All Groq API keys are rate-limited or failed.");
 }
 
 // --- Helper function to read PDF ---
@@ -91,32 +135,6 @@ async function readPdf(filePath) {
     console.error(`❌ Error reading PDF file ${filePath}: ${error.message}`);
     return null;
   }
-}
-
-// --- Groq Model Fallback Logic ---
-const GROQ_MODELS = ["gemma2-9b-it", "llama3-8b-8192", "llama3-70b-8192"];
-
-async function callGroqWithFallback({ messages, modelList }) {
-  for (const model of modelList) {
-    try {
-      const chatCompletion = await groqClient.chat.completions.create({
-        messages,
-        model,
-      });
-      return chatCompletion;
-    } catch (error) {
-      if (
-        error.status === 429 &&
-        error.message &&
-        error.message.includes("rate limit")
-      ) {
-        console.warn(`⚠️ Rate limit for model ${model}, trying next...`);
-        continue;
-      }
-      throw error;
-    }
-  }
-  throw new Error("All Groq models are rate-limited or failed.");
 }
 
 // --- Function to get keywords from CV using Groq ---

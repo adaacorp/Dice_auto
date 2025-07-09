@@ -15,7 +15,15 @@ jobs:
   test:
     timeout-minutes: 60
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
     steps:
+      - name: Show local time
+        env:
+          TZ: America/New_York
+        run: |
+          date
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:

@@ -4,9 +4,7 @@
 const { test, expect } = require("@playwright/test");
 const ExcelJS = require("exceljs");
 const fs = require("fs");
-const path = require("path");
-const url = require("url"); // Node.js built-in module
-const { Groq } = require("groq-sdk"); // Import Groq SDK
+const path = (re = require("groq-sdk")); // Import Groq SDK
 const pdfParse = require("pdf-parse"); // For reading PDF content
 require("dotenv").config(); // Load environment variables
 
@@ -14,7 +12,6 @@ require("dotenv").config(); // Load environment variables
 const SEARCH_ITEMS = [
   // QA-Specific Roles
   "Playwright",
-  "Salesforce QA",
   "QA",
   "Quality",
   "Automation",
@@ -42,7 +39,7 @@ test.setTimeout(0); // 0 means no timeout
 // !!! IMPORTANT !!! Update this path to your CV PDF file
 const CV_PATH = path.join(__dirname, "../CV/your_cv.pdf");
 const KEYWORD_EXTRACTION_PROMPT = `
-Extract a list of 8 or fewer highly relevant technical skills and job role keywords from the following CV text, with relevance to QA / Automation / SDET / Playwright roles. Focus on action verbs, technologies, methodologies, and common industry terms. List each skill on a new line. If no relevant skills are found, respond with "No relevant skills found".
+Extract a list of only 6 highly relevant technical skills and job role keywords from the following CV text, with relevance to QA / Automation / SDET / Playwright roles. Focus on action verbs, technologies, methodologies, and common industry terms. List each skill on a new line. If no relevant skills are found, respond with "No relevant skills found".
 
 CV Text:
 \`\`\`
@@ -75,17 +72,23 @@ const groqApiKeys = Object.keys(process.env)
   .sort()
   .map((k) => process.env[k])
   .filter(Boolean);
+
+// --- NEW: Global state for API key management ---
 let groqClient;
-let groqApiKeyIndex = 0;
+let groqApiKeyIndex = 0; // The index of the current key to use
+let isLlmActive = true; // Global switch to disable LLM if all keys fail
 
 function setGroqClientByIndex(idx) {
-  groqClient = new Groq({ apiKey: groqApiKeys[idx] });
+  if (idx < groqApiKeys.length) {
+    groqClient = new Groq({ apiKey: groqApiKeys[idx] });
+  }
 }
 
 if (!groqApiKeys.length) {
   console.error(
     "❌ No GROQ_API_KEY_* found in .env. LLM features will be disabled."
   );
+  isLlmActive = false; // Disable LLM from the start
 } else {
   setGroqClientByIndex(groqApiKeyIndex);
   console.log(
@@ -94,53 +97,64 @@ if (!groqApiKeys.length) {
   );
 }
 
-// --- Groq API Key Rotation Only (No Model Fallback) ---
-const GROQ_MODEL = "gemma2-9b-it"; // Use a single model
+// --- NEW: Reworked Groq API call function with stateful rotation and shutdown ---
+const GROQ_MODEL = "gemma2-9b-it";
 
-async function callGroqWithFallback({ messages }) {
-  let lastError;
-  let allRateLimited = true;
-  let lastKeyIndex = -1;
-  for (let i = 0; i < groqApiKeys.length; i++) {
-    setGroqClientByIndex(i);
+async function callGroqWithRotation({ messages }) {
+  if (!isLlmActive) {
+    return { error: true, reason: "LLM is disabled due to rate limits." };
+  }
+
+  try {
+    // Set the client with the current key index before the call
+    setGroqClientByIndex(groqApiKeyIndex);
     console.log(
-      `🔑 Using Groq API key index ${i} (${groqApiKeys[i].slice(0, 8)}...)`
+      `🔑 Using Groq API key index ${groqApiKeyIndex} (${groqApiKeys[
+        groqApiKeyIndex
+      ].slice(0, 8)}...)`
     );
-    try {
-      const chatCompletion = await groqClient.chat.completions.create({
-        messages,
-        model: GROQ_MODEL,
-      });
-      allRateLimited = false;
-      return chatCompletion;
-    } catch (error) {
-      if (
-        error.status === 429 &&
-        error.message &&
-        error.message.includes("rate limit")
-      ) {
-        console.warn(
-          `⚠️ Rate limit for API key index ${i} (${groqApiKeys[i].slice(
-            0,
-            8
-          )}...), trying next key...`
+
+    const chatCompletion = await groqClient.chat.completions.create({
+      messages,
+      model: GROQ_MODEL,
+    });
+
+    return { success: true, data: chatCompletion }; // Return a structured success object
+  } catch (error) {
+    // More robust check for rate limit error
+    const isRateLimitError =
+      error.status === 429 ||
+      (error.message &&
+        (error.message.includes("rate limit") ||
+          error.message.includes("429")));
+
+    if (isRateLimitError) {
+      console.warn(
+        `⚠️ Rate limit for API key index ${groqApiKeyIndex}. Incrementing to next key.`
+      );
+      groqApiKeyIndex++; // Increment the global index
+
+      if (groqApiKeyIndex >= groqApiKeys.length) {
+        console.error(
+          "❌ All Groq API keys have been rate-limited. Disabling LLM for the rest of this run."
         );
-        lastError = error;
-        lastKeyIndex = i;
-        continue;
+        isLlmActive = false; // All keys exhausted, disable LLM
+        return { error: true, reason: "All API keys rate-limited." };
+      } else {
+        // Retry the call with the new key index.
+        console.log(
+          `🔄 Retrying immediately with new API key index ${groqApiKeyIndex}.`
+        );
+        return callGroqWithRotation({ messages }); // Recursive call to retry
       }
-      throw error;
+    } else {
+      // It's a different, unexpected error
+      console.error(`❌ Unhandled Groq API error: ${error.message}`);
+      // Disable LLM on other critical errors too, to be safe.
+      isLlmActive = false;
+      return { error: true, reason: `Unhandled API Error: ${error.message}` };
     }
   }
-  if (allRateLimited) {
-    console.error(
-      `❌ All Groq API keys have hit the rate limit. Last key tried: index ${lastKeyIndex} (${groqApiKeys[
-        lastKeyIndex
-      ].slice(0, 8)}...). Please try again after 24 hours.`
-    );
-    process.exit(1);
-  }
-  throw lastError || new Error("All Groq API keys are rate-limited or failed.");
 }
 
 // --- Helper function to read PDF ---
@@ -159,62 +173,44 @@ async function readPdf(filePath) {
   }
 }
 
-// --- Function to get keywords from CV using Groq ---
+// --- UPDATED: Function to get keywords from CV using Groq ---
 async function getCVKeywords(cvText) {
-  if (!groqApiKeys.length || !cvText) {
+  if (!isLlmActive || !cvText) {
     console.warn(
-      "⚠️ No Groq API keys or CV text is empty. Cannot extract keywords."
+      "⚠️ LLM is disabled or CV text is empty. Cannot extract keywords."
     );
     return [];
   }
-  for (let i = 0; i < groqApiKeys.length; i++) {
-    setGroqClientByIndex(i);
-    console.log(`🧠 Trying Groq API key index ${i} for keyword extraction...`);
-    try {
-      const chatCompletion = await groqClient.chat.completions.create({
-        messages: [
-          {
-            role: "user",
-            content: KEYWORD_EXTRACTION_PROMPT.replace("{cvText}", cvText),
-          },
-        ],
-        model: GROQ_MODEL,
-      });
-      const responseContent = chatCompletion.choices[0]?.message?.content;
-      if (
-        !responseContent ||
-        responseContent.toLowerCase() === "no relevant skills found"
-      ) {
-        console.log("ℹ️ Groq: No relevant skills found in CV.");
-        return [];
-      }
-      const keywords = responseContent
-        .split("\n")
-        .map((kw) => kw.trim())
-        .filter((kw) => kw.length > 1);
-      console.log(`✅ Groq extracted ${keywords.length} keywords from CV.`);
-      return keywords;
-    } catch (error) {
-      if (
-        error.status === 429 ||
-        (error.response && error.response.status === 429) ||
-        (error.message && error.message.includes("rate limit"))
-      ) {
-        console.warn(
-          `⚠️ Rate limit for API key index ${i}, trying next key...`
-        );
-        continue;
-      }
-      console.error(
-        `❌ Groq API error during keyword extraction (key ${i}): ${error.message}`
-      );
-      break;
-    }
+
+  const result = await callGroqWithRotation({
+    messages: [
+      {
+        role: "user",
+        content: KEYWORD_EXTRACTION_PROMPT.replace("{cvText}", cvText),
+      },
+    ],
+  });
+
+  if (result.error) {
+    console.error(`❌ Failed to get CV keywords from Groq: ${result.reason}`);
+    return [];
   }
-  console.error(
-    "❌ All Groq API keys are rate-limited or failed for keyword extraction."
-  );
-  return [];
+
+  const responseContent = result.data.choices[0]?.message?.content;
+  if (
+    !responseContent ||
+    responseContent.toLowerCase().includes("no relevant skills found")
+  ) {
+    console.log("ℹ️ Groq: No relevant skills found in CV.");
+    return [];
+  }
+
+  const keywords = responseContent
+    .split("\n")
+    .map((kw) => kw.trim())
+    .filter((kw) => kw.length > 1);
+  console.log(`✅ Groq extracted ${keywords.length} keywords from CV.`);
+  return keywords;
 }
 
 // --- Function to extract job description from a Playwright page ---
@@ -299,38 +295,42 @@ async function extractJobDescription(page) {
   }
 }
 
-// --- Function to compare job description with keywords using Groq ---
+// --- UPDATED: Function to compare job description with keywords using Groq ---
 async function checkJobMatchWithLLM(cvKeywords, jobDescription) {
-  if (!groqClient || cvKeywords.length === 0 || !jobDescription) {
+  if (!isLlmActive || cvKeywords.length === 0 || !jobDescription) {
     console.warn(
-      "⚠️ Groq client not ready, no CV keywords, or no job description. Cannot perform LLM match."
+      "⚠️ LLM is disabled, no CV keywords, or no job description. Cannot perform LLM match."
     );
-    return { match: "SKIPPED_LLM", reason: "Missing data or LLM client" };
+    return { match: "SKIPPED_LLM", reason: "LLM disabled or missing data" };
   }
-  try {
-    const prompt =
-      JOB_DESCRIPTION_MATCH_PROMPT.replace(
-        "{cvKeywords}",
-        cvKeywords.join(", ")
-      ).replace("{jobDescription}", jobDescription) +
-      "\n\nRespond with only one sentence.";
-    const chatCompletion = await callGroqWithFallback({
-      messages: [{ role: "user", content: prompt }],
-    });
-    const responseContent = chatCompletion.choices[0]?.message?.content;
-    if (responseContent && responseContent.toLowerCase().includes("match")) {
-      return { match: "MATCH", reason: responseContent };
-    } else if (
-      responseContent &&
-      responseContent.toLowerCase().includes("partial_match")
-    ) {
-      return { match: "PARTIAL_MATCH", reason: responseContent };
-    } else {
-      return { match: "NO_MATCH", reason: responseContent };
-    }
-  } catch (error) {
-    console.error(`❌ Groq API error during job matching: ${error.message}`);
-    return { match: "ERROR", reason: `Groq API error: ${error.message}` };
+
+  const prompt =
+    JOB_DESCRIPTION_MATCH_PROMPT.replace(
+      "{cvKeywords}",
+      cvKeywords.join(", ")
+    ).replace("{jobDescription}", jobDescription) +
+    "\n\nRespond with only one sentence.";
+
+  const result = await callGroqWithRotation({
+    messages: [{ role: "user", content: prompt }],
+  });
+
+  if (result.error) {
+    console.error(`❌ Groq API error during job matching: ${result.reason}`);
+    return { match: "ERROR", reason: `Groq API error: ${result.reason}` };
+  }
+
+  const chatCompletion = result.data;
+  const responseContent = chatCompletion.choices[0]?.message?.content;
+  if (responseContent && responseContent.toLowerCase().includes("match")) {
+    return { match: "MATCH", reason: responseContent };
+  } else if (
+    responseContent &&
+    responseContent.toLowerCase().includes("partial_match")
+  ) {
+    return { match: "PARTIAL_MATCH", reason: responseContent };
+  } else {
+    return { match: "NO_MATCH", reason: responseContent || "No response" };
   }
 }
 
@@ -909,65 +909,52 @@ const processJob = async (context, jobCard, cardIndex, logger, cvKeywords) => {
       `Job Details - Title: "${jobTitle}", Company: "${companyName}", URL: ${currentJobPageUrl}`
     );
 
-    const jobDescription = await extractJobDescription(newTab);
     const isInitialMatch = matchesSearchCriteria(jobTitle);
-    let llmMatchResult = null;
-    if (!isInitialMatch.matches && jobDescription) {
-      llmMatchResult = await checkJobMatchWithLLM(cvKeywords, jobDescription);
-      console.log(
-        `LLM Match Result for "${jobTitle}": ${llmMatchResult.match}`
-      );
+    let shouldApply = isInitialMatch.matches;
 
-      if (
-        llmMatchResult.match === "NO_MATCH" ||
-        llmMatchResult.match === "ERROR"
-      ) {
-        const status = `Skipped (LLM ${llmMatchResult.match})`;
-        await logger.logJob(
-          jobTitle,
-          companyName,
-          status,
-          llmMatchResult,
-          "",
-          currentJobPageUrl
+    // --- MAIN LLM LOGIC TRIGGER ---
+    // If it's not an initial match, and the LLM is active, use LLM to check.
+    if (!isInitialMatch.matches && isLlmActive) {
+      const jobDescription = await extractJobDescription(newTab);
+      if (jobDescription) {
+        llmMatchResult = await checkJobMatchWithLLM(cvKeywords, jobDescription);
+        console.log(
+          `LLM Match Result for "${jobTitle}": ${llmMatchResult.match}`
         );
-        return {
-          success: false,
-          reason: `LLM ${llmMatchResult.match}`,
-          skipped: true,
-          llmResult: llmMatchResult,
-        };
+
+        if (
+          llmMatchResult.match === "MATCH" ||
+          llmMatchResult.match === "PARTIAL_MATCH"
+        ) {
+          shouldApply = true; // LLM says it's a good match, so we should apply.
+        } else {
+          // LLM says NO_MATCH or ERROR
+          const status = `Skipped (LLM ${llmMatchResult.match})`;
+          await logger.logJob(
+            jobTitle,
+            companyName,
+            status,
+            llmMatchResult,
+            "",
+            currentJobPageUrl
+          );
+          return {
+            success: false,
+            reason: `LLM ${llmMatchResult.match}`,
+            skipped: true,
+            llmResult: llmMatchResult,
+          };
+        }
+      } else {
+        console.warn(
+          `⚠️ No job description for "${jobTitle}". Cannot use LLM. Skipping.`
+        );
+        shouldApply = false; // Cannot verify with LLM, so don't apply.
       }
-    } else {
-      console.warn(
-        `⚠️ No job description found for "${jobTitle}". Falling back to keyword search.`
-      );
     }
 
-    if (!jobDescription && !isInitialMatch.matches) {
-      const reason = `Skipped - No LLM info & No initial match`;
-      console.log(
-        `❌ "${jobTitle}" doesn't match initial criteria or LLM info.`
-      );
-      await logger.logJob(
-        jobTitle,
-        companyName,
-        reason,
-        null,
-        "",
-        currentJobPageUrl
-      );
-      return { success: false, reason: reason, skipped: true };
-    }
-
-    if (
-      (llmMatchResult &&
-        (llmMatchResult.match === "MATCH" ||
-          llmMatchResult.match === "PARTIAL_MATCH")) ||
-      (!jobDescription && isInitialMatch.matches) ||
-      isInitialMatch.matches
-    ) {
-      console.log(`Applying to "${jobTitle}"...`);
+    if (shouldApply) {
+      console.log(`✅ Proceeding to apply for "${jobTitle}"...`);
       const applicationResult = await applyToJob(newTab);
 
       if (applicationResult.success) {
@@ -1008,7 +995,8 @@ const processJob = async (context, jobCard, cardIndex, logger, cvKeywords) => {
         };
       }
     } else {
-      const status = `Skipped (No LLM Match or Fallback Failed)`;
+      // This path is taken if isInitialMatch is false AND LLM is inactive or couldn't be used.
+      const status = `Skipped (No keyword match)`;
       await logger.logJob(
         jobTitle,
         companyName,
@@ -1278,27 +1266,24 @@ const DOWNLOADED_PAGES_DIR = "./downloaded_pages"; // Directory for saving downl
 let cvKeywords = [];
 test.beforeAll(async () => {
   await logger.initializeExcel();
-  if (!groqApiKeys.length) {
-    console.error(
-      "❌ No GROQ_API_KEY_* found in .env. LLM functionality will be disabled."
-    );
-  } else {
+  if (isLlmActive) {
     console.log("Reading CV and extracting keywords...");
     const cvText = await readPdf(CV_PATH);
     if (cvText) {
       cvKeywords = await getCVKeywords(cvText);
-      if (!cvKeywords.length) {
+      if (!cvKeywords.length && isLlmActive) {
         console.warn(
-          "Groq client not ready, No CV Keyword. Skipping LLM for this run."
+          "Could not extract CV Keywords, but LLM is active. LLM matching may be affected."
         );
-      } else {
+      } else if (cvKeywords.length > 0) {
         console.log(`CV Keywords extracted: ${cvKeywords.join(", ")}`);
       }
     } else {
-      console.warn(
-        "⚠️ Could not obtain CV keywords. Falling back to traditional search."
-      );
+      console.warn("⚠️ Could not read CV file. LLM matching will be skipped.");
+      cvKeywords = [];
     }
+  } else {
+    console.log("LLM is disabled. Skipping CV keyword extraction.");
   }
 });
 
@@ -1438,6 +1423,11 @@ test.afterAll(async () => {
         ).toFixed(1)}%`
       );
     }
+  }
+  if (!isLlmActive) {
+    console.log(
+      "\n⚠️  LLM was disabled during this run due to API rate limits."
+    );
   }
   console.log("=".repeat(70));
 });

@@ -14,6 +14,7 @@ require("dotenv").config(); // Load environment variables
 const SEARCH_ITEMS = [
   // Playwright-Specific Roles
   "Playwright",
+  "Salesforce QA",
 
   // General QA / Testing Roles
   "QA",
@@ -1261,9 +1262,9 @@ const DOWNLOADED_PAGES_DIR = "./downloaded_pages"; // Directory for saving downl
 let cvKeywords = [];
 test.beforeAll(async () => {
   await logger.initializeExcel();
-  if (!GROQ_API_KEY) {
+  if (!groqApiKeys.length) {
     console.error(
-      "❌ GROQ_API_KEY is missing. LLM functionality will be disabled."
+      "❌ No GROQ_API_KEY_* found in .env. LLM functionality will be disabled."
     );
   } else {
     console.log("Reading CV and extracting keywords...");

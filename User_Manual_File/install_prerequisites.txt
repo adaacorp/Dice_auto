@@ -3,7 +3,4 @@ RUN THIS IN THE TERMINAL:
 npm install -D @playwright/test
 npm install exceljs 
 npx playwright install
-
-OR 
-
-sudo npm install -D @playwright/test && npm install exceljs && npx playwright install
+npm install dotenv pdf-parse groq-sdk

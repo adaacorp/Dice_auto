@@ -1,80 +1,79 @@
-name: Playwright Tests
+# name: Playwright Tests
+# permissions:
+#   contents: write
 
-permissions:
-  contents: write
+# on:
+#   push:
+#     branches: [main, master]
+#   pull_request:
+#     branches: [main, master]
+#   schedule:
+#     - cron: "0 13 * * 1-5" # 9:00 AM ET Monday-Friday
 
-on:
-  push:
-    branches: [main, master]
-  pull_request:
-    branches: [main, master]
-  schedule:
-    - cron: "0 13 * * 1-5" # 9:00 AM ET Monday-Friday
+# jobs:
+#   test:
+#     timeout-minutes: 60
+#     runs-on: ubuntu-latest
+#     defaults:
+#       run:
+#         shell: bash
+#     steps:
+#       - name: Show local time
+#         env:
+#           TZ: America/New_York
+#         run: |
+#           date
+#       - uses: actions/checkout@v4
+#       - uses: actions/setup-node@v4
+#         with:
+#           node-version: lts/*
+#           cache: "npm"
 
-jobs:
-  test:
-    timeout-minutes: 60
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - name: Show local time
-        env:
-          TZ: America/New_York
-        run: |
-          date
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: lts/*
-          cache: "npm"
+#       - name: Install dependencies
+#         run: |
+#           npm ci
+#           # Install test dependencies
+#           npm install -D @playwright/test
+#           npm install exceljs
+#           npm install dotenv pdf-parse groq-sdk
 
-      - name: Install dependencies
-        run: |
-          npm ci
-          # Install test dependencies
-          npm install -D @playwright/test
-          npm install exceljs
-          npm install dotenv pdf-parse groq-sdk
+#       - name: Install only Chromium browser
+#         run: npx playwright install chromium --with-deps
 
-      - name: Install only Chromium browser
-        run: npx playwright install chromium --with-deps
+#       - name: Run Playwright test for dice_easy.spec.js
+#         run: npx playwright test tests/dice_easy.spec.js
+#         env:
+#           CI: true
 
-      - name: Run Playwright test for dice_easy.spec.js
-        run: npx playwright test tests/dice_easy.spec.js
-        env:
-          CI: true
+#       - name: Upload test results
+#         if: always()
+#         uses: actions/upload-artifact@v4
+#         with:
+#           name: playwright-report
+#           path: |
+#             playwright-report/
+#             test-results/
 
-      - name: Upload test results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: playwright-report
-          path: |
-            playwright-report/
-            test-results/
+#       - name: Upload Logs and Reports
+#         if: always()
+#         uses: actions/upload-artifact@v4
+#         with:
+#           name: application-logs
+#           path: |
+#             Logs/
 
-      - name: Upload Logs and Reports
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: application-logs
-          path: |
-            Logs/
+#       - name: Get Date and Time
+#         id: get_date
+#         run: |
+#           echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
+#           echo "time=$(date +'%H:%M:%S')" >> $GITHUB_OUTPUT
 
-      - name: Get Date and Time
-        id: get_date
-        run: |
-          echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
-          echo "time=$(date +'%H:%M:%S')" >> $GITHUB_OUTPUT
-
-      - name: Commit and push Logs and Reports
-        run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add Logs/ Reports/
-          git commit -m "Add test Logs and Reports [skip ci]" || echo "No changes to commit"
-          git push
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+#       - name: Commit and push Logs and Reports
+#         run: |
+#           git config --global user.name "github-actions[bot]"
+#           git config --global user.email "github-actions[bot]@users.noreply.github.com"
+#           git add Logs/ Reports/
+#           git commit -m "Add test Logs and Reports [skip ci]" || echo "No changes to commit"
+#           git push
+#         env:
+#           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
